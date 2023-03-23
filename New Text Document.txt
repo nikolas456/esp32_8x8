@@ -1,0 +1,225 @@
+#include <Arduino.h>
+#define ESP32
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <MD_Parola.h>
+#include <MD_MAX72xx.h>
+
+#define HARDWARE_TYPE MD_MAX72XX::FC16_HW
+#define MAX_DEVICES 4 // 4 blocks
+#define CS_PIN 21
+
+// create an instance of the MD_Parola class
+MD_Parola ledMatrix = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
+
+AsyncWebServer server(80);
+// REPLACE WITH YOUR NETWORK CREDENTIALS
+//const char* ssid = "naituin";
+//const char* password = "3348576183";
+//const char* ssid = "DSG";
+//const char* password = "3348576183";
+//const char* ssid = "Teachers";
+//const char* password = "IKT2018-Teachers";
+const char* ssid = "Administration";
+const char* password = "IKT2018-Office";
+String prom = "";
+
+
+String inputMessage;
+
+
+
+const char* PARAM_INPUT_1 = "input1";
+// HTML web page to handle 1 input fields (input1)
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head>
+<title>TABELA</title>
+<meta charset="UTF-8">
+<style>
+html, body {
+min-height: 100%;
+}
+body, div, form, input, select, p { 
+margin: 0;
+font-family: Roboto, Arial, sans-serif; //по какъв начин да изглежда шрифта;
+font-size: 16px;
+color: #eee;
+}
+body {
+background: url("https://images7.alphacoders.com/585/585932.png") no-repeat center;
+background-size: cover;
+}
+h1, h2 {
+text-transform: uppercase;
+font-weight: 400;
+}
+h2 {
+margin: 0 0 0 8px;
+}
+.main-block {
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+padding: 25px;
+}
+.left-part, form {
+padding: 25px;
+}
+.left-part {
+text-align: center;
+}
+form {
+background: rgba(0, 0, 0, 0.7); 
+}
+.title {
+display: flex;
+align-items: center;
+margin-bottom: 20px;
+}
+.info {
+display: flex;
+flex-direction: column;
+}
+input, select {
+padding: 5px;
+background: transparent;
+border: none;
+border-bottom: 1px solid #eee;
+}
+input::placeholder {
+color: #eee;
+}
+option:focus {
+border: none;
+}
+option {
+background: black; 
+border: none;
+}
+.checkbox input {
+vertical-align: middle;
+}
+.checkbox a {
+color: #26a9e0;
+}
+.checkbox a:hover {
+color: #85d6de;
+}
+.btn-item, button {
+padding: 10px 5px;
+margin-top: 20px;
+border-radius: 5px; 
+border: none;
+background: #26a9e0; 
+text-decoration: none;
+font-size: 15px;
+font-weight: 400;
+color: #fff;
+}
+.btn-item {
+display: inline-block;
+margin: 20px 5px 0;
+}
+button {
+width: 100%;
+}
+button:hover, .btn-item:hover {
+background: #85d6de;
+}
+@media (min-width: 208px) {
+html, body {
+height: 50%;
+}
+.main-block {
+height: calc(100% - 50px);
+}
+.left-part, form {
+border-radius: 12px; // за заобляне на ъглите на бордерите;
+}}
+img{
+display: block;
+}
+.left-part{
+background: rgba(0.5, 0, 0, 0.7);
+}
+</style></head><body>
+<div class="main-block">
+<div class="left-part">
+<center>
+<img src="https://www.pgevarna.com/images/untitled%20copy.png?crc=3896397730">
+</center>
+<h1>ПГЕ Варна</h1>
+<p>Създадено от Николай Панайотов 2023</p>
+</div><br>
+<form action="/get">
+<div class="title">
+<h2>Въведи текстът, който да се изпише на табелата</h2>
+</div>
+<div class="info">
+<input class="fname" type="text" name="input1" placeholder="Текст">
+<button type="submit" value="Submit" href="/">Изпрати</button>
+</div></form></div></body></html>
+)rawliteral";
+void notFound(AsyncWebServerRequest *request) {
+request->send(404, "text/plain", "Not found");
+}
+
+char promarray [30] ;
+prom.toCharArray(promarray, 30)
+void setup() {
+ledMatrix.begin();         // initialize the object
+  ledMatrix.setIntensity(0); // set the brightness of the LED matrix display (from 0 to 15)
+  ledMatrix.displayClear();  // clear led matrix display
+
+  ledMatrix.displayScroll(promarray, PA_CENTER, PA_SCROLL_LEFT, 100);
+  
+Serial.begin(115200);
+WiFi.mode(WIFI_STA);
+WiFi.begin(ssid, password);
+if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+Serial.println("WiFi Failed!");
+return;
+}
+Serial.println();
+Serial.print("IP Address: ");
+Serial.println(WiFi.localIP());
+// Send web page with input fields to client
+server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+request->send_P(200, "text/html", index_html);
+});
+// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
+server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+//String inputMessage;
+String inputParam;
+// GET input1 value on <ESP_IP>/get?input1=<inputMessage>
+if (request->hasParam(PARAM_INPUT_1)) {
+inputMessage = request->getParam(PARAM_INPUT_1)->value();
+inputParam = PARAM_INPUT_1;
+}
+else {
+inputMessage = "No message sent";
+inputParam = "none";
+}
+prom = inputMessage;   
+Serial.println(inputMessage);
+request->send(200, "text/html", "HTTP GET request sent to your ESP on input field (" 
++ inputParam + ") with value: " + inputMessage +
+"<br><a href=\"/\">Return to Home Page</a>");
+});
+server.onNotFound(notFound);
+server.begin();
+
+
+}
+
+
+
+void loop() {
+ 
+  if (ledMatrix.displayAnimate()) {
+    ledMatrix.displayReset();
+  }
+ 
+}
